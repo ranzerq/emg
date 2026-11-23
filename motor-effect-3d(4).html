@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>The Motor Effect – 3D (IGCSE Physics)</title>
+<style>
+:root{--bg:#0e1420;--pn:#1a2335;--tx:#f4f7fb;--bd:#5a6a86;--on:#ffc400;--onTx:#111}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+canvas:active{cursor:grabbing}
+details{position:fixed;top:8px;left:8px;max-width:min(430px,62vw);max-height:60vh;overflow:auto;background:var(--pn);border:2px solid var(--bd);border-radius:12px;padding:8px 12px;font-size:14px;line-height:1.45;opacity:.97}
+summary{font-weight:700;cursor:pointer}
+details p{margin:.45em 0}
+.sw{display:inline-block;width:.95em;height:.95em;border-radius:3px;vertical-align:-1px;border:1px solid var(--bd)}
+#live{border-top:1px solid var(--bd);padding-top:6px;margin-top:6px}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;background:linear-gradient(transparent,var(--bg) 35%)}
+.g{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+button{font:600 14px system-ui,sans-serif;color:var(--tx);background:var(--pn);border:2px solid var(--bd);border-radius:999px;padding:8px 13px;min-height:40px;cursor:pointer}
+button[aria-pressed=true]{background:var(--on);color:var(--onTx);border-color:var(--on)}
+button:disabled{opacity:.4;cursor:not-allowed}
+#hint{position:fixed;right:10px;bottom:118px;font-size:12px;opacity:.75;text-align:right;pointer-events:none}
+</style></head><body>
+<canvas id="c"></canvas>
+<details id="info" open><summary>Motor effect &amp; Fleming's left-hand rule</summary>
+<p><b>Rule:</b> hold your <b>left</b> hand with thumb, first finger and second finger at right angles.
+<b>F</b>irst finger = <b>F</b>ield (N→S), se<b>C</b>ond finger = <b>C</b>urrent (+ → −), <b>Th</b>umb = <b>Th</b>rust (force / motion).</p>
+<p>A wire carrying current in a magnetic field feels a force. The two sides of the coil carry current in opposite directions, so the forces are opposite and make a turning effect.</p>
+<p><span class="sw" style="background:#00b8d4"></span> Field &nbsp;<span class="sw" style="background:#ff9800"></span> Current &nbsp;<span class="sw" style="background:#2ecc71"></span> Force &nbsp;|&nbsp; coil: <span class="sw" style="background:#fff"></span> white side, <span class="sw" style="background:#000"></span> black side</p>
+<div id="live"></div></details>
+<div id="hint">Drag to rotate · pinch / scroll to zoom</div>
+<div id="bar">
+<div class="g"><button data-v="0">Axle</button><button data-v="1">Top</button><button data-v="2">End</button></div>
+<div class="g"><button id="bComm" aria-pressed="true"></button><button id="bShow" aria-pressed="true"></button><button id="bRev">Reverse current</button><button id="bPol">Swap poles</button></div>
+<div class="g"><button id="bPause" aria-pressed="false">Pause</button><button id="bSlow" aria-pressed="false">Slow-mo</button></div>
+</div>
+<script>
+const $=s=>document.querySelector(s),cv=$('#c'),g=cv.getContext('2d');
+const V={sub:(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]],add:(a,b)=>[a[0]+b[0],a[1]+b[1],a[2]+b[2]],mul:(a,k)=>[a[0]*k,a[1]*k,a[2]*k],
+dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2],cross:(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]],
+norm:a=>{const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l]}};
+const T={bg:'#0e1420',field:'#00e5ff',cur:'#ffb300',force:'#39e07a',tx:'#f4f7fb',wire:'#b6c0d0',ol:'#0b0f18',N:'#e53935',S:'#2f5bff'};
+const st={comm:true,show:true,sI:1,sB:1,paused:false,slow:false};
+let th=0,om=0,ph=0,tt=0,W,H,dpr,eye,Fw,R,U,foc;
+const cam={yaw:.75,pitch:.38,dist:13};let goal=null;
+const VIEWS=[{yaw:0,pitch:0,dist:13},{yaw:0,pitch:1.5,dist:13},{yaw:Math.PI,pitch:.12,dist:13}];
+function resize(){dpr=devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;g.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function setCam(){const cp=Math.cos(cam.pitch);eye=[cam.dist*cp*Math.sin(cam.yaw),cam.dist*Math.sin(cam.pitch),cam.dist*cp*Math.cos(cam.yaw)];
+Fw=V.norm(V.mul(eye,-1));R=V.norm(V.cross(Fw,[0,1,0]));U=V.cross(R,Fw);foc=Math.min(W*1.25,H*1.35)}
+function P(p){const d=V.sub(p,eye),z=V.dot(d,Fw);return[W/2+V.dot(d,R)/z*foc,H*.44-V.dot(d,U)/z*foc,z]}
+/* ---------- input ---------- */
+const ptr=new Map();let lastD=0;const pd=()=>{const a=[...ptr.values()];return Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1])||1};
+cv.addEventListener('pointerdown',e=>{cv.setPointerCapture(e.pointerId);ptr.set(e.pointerId,[e.clientX,e.clientY]);goal=null;if(ptr.size==2)lastD=pd()});
+cv.addEventListener('pointermove',e=>{const o=ptr.get(e.pointerId);if(!o)return;
+if(ptr.size==1){cam.yaw-=(e.clientX-o[0])*.004;cam.pitch=Math.max(-1.5,Math.min(1.5,cam.pitch+(e.clientY-o[1])*.004))}
+ptr.set(e.pointerId,[e.clientX,e.clientY]);
+if(ptr.size==2){const d=pd();cam.dist=Math.max(6,Math.min(26,cam.dist*lastD/d));lastD=d}});
+['pointerup','pointercancel'].forEach(n=>cv.addEventListener(n,e=>{ptr.delete(e.pointerId);if(ptr.size==2)lastD=pd()}));
+cv.addEventListener('wheel',e=>{e.preventDefault();cam.dist=Math.max(6,Math.min(26,cam.dist*(1+e.deltaY*.001)))},{passive:false});
+/* ---------- draw helpers ---------- */
+let items=[];
+const Ln=(A,B)=>{g.beginPath();g.moveTo(A[0],A[1]);g.lineTo(B[0],B[1]);g.stroke()};
+function seg(a,b,col,w,ol,al=1){const A=P(a),B=P(b);items.push({z:(A[2]+B[2])/2,d(){g.globalAlpha=al;g.lineCap='round';
+if(ol){g.strokeStyle=ol;g.lineWidth=w+3;Ln(A,B)}g.strokeStyle=col;g.lineWidth=w;Ln(A,B);g.globalAlpha=1}})}
+function poly(pts,fill,stroke,al=1){const Q=pts.map(P);items.push({z:Q.reduce((s,q)=>s+q[2],0)/Q.length,d(){g.globalAlpha=al;g.beginPath();
+Q.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=fill;g.fill();
+if(stroke){g.strokeStyle=stroke;g.lineWidth=1.5;g.stroke()}g.globalAlpha=1}})}
+function head(B,ang,hl,col,ol){const c=Math.cos(ang),s=Math.sin(ang);g.beginPath();g.moveTo(B[0],B[1]);
+g.lineTo(B[0]-c*hl+s*hl*.5,B[1]-s*hl-c*hl*.5);g.lineTo(B[0]-c*hl-s*hl*.5,B[1]-s*hl+c*hl*.5);g.closePath();
+g.lineJoin='round';if(ol){g.strokeStyle=ol;g.lineWidth=3.5;g.stroke()}g.fillStyle=col;g.fill()}
+function text(x,y,s,col,size,halo=true){g.font=`bold ${size}px system-ui,sans-serif`;g.textAlign='center';g.textBaseline='middle';
+if(halo){g.lineWidth=4;g.lineJoin='round';g.strokeStyle=T.bg;g.strokeText(s,x,y)}g.fillStyle=col;g.fillText(s,x,y)}
+function text3(p,s,col,size,halo=true){const A=P(p);items.push({z:A[2]-.6,d(){text(A[0],A[1],s,col,size,halo)}})}
+function arrow(a,b,col,w,lab,al=1){const A=P(a),B=P(b),ang=Math.atan2(B[1]-A[1],B[0]-A[0]),hl=Math.max(11,w*3);
+items.push({z:(A[2]+B[2])/2-.3,d(){g.globalAlpha=al;g.lineCap='round';const bx=B[0]-Math.cos(ang)*hl*.6,by=B[1]-Math.sin(ang)*hl*.6;
+g.strokeStyle=T.ol;g.lineWidth=w+3;Ln(A,[bx,by]);g.strokeStyle=col;g.lineWidth=w;Ln(A,[bx,by]);head(B,ang,hl,col,T.ol);
+g.globalAlpha=1;if(lab)text(B[0]+Math.cos(ang)*20,B[1]+Math.sin(ang)*20,lab,col,17);g.globalAlpha=1}})}
+function chevron(p,dir,col){const A=P(p),B=P(V.add(p,V.mul(dir,.12))),ang=Math.atan2(B[1]-A[1],B[0]-A[0]);
+items.push({z:A[2]-.4,d(){head([A[0]+Math.cos(ang)*6,A[1]+Math.sin(ang)*6],ang,13,col,'#111')}})}
+function box(x0,x1,y0,y1,z0,z1,ch){const col=ch=='N'?T.N:T.S,c=[];
+for(let i=0;i<8;i++)c.push([i&1?x1:x0,i&2?y1:y0,i&4?z1:z0]);
+[[0,2,6,4,[-1,0,0],.7],[1,3,7,5,[1,0,0],.7],[0,1,5,4,[0,-1,0],.5],[2,3,7,6,[0,1,0],1],[0,1,3,2,[0,0,-1],.65],[4,5,7,6,[0,0,1],.85]].forEach(f=>{
+const pts=[c[f[0]],c[f[1]],c[f[2]],c[f[3]]],cen=V.mul(pts.reduce((s,p)=>V.add(s,p),[0,0,0]),.25);
+if(V.dot(f[4],V.sub(eye,cen))<=0)return;
+poly(pts,col,'#000');poly(pts,'#000','#0000',1-f[5]);
+if(f[4][0]==0&&f[4][1]>=0){const A=P(cen);items.push({z:A[2]-.2,d(){text(A[0],A[1],ch,'#fff',1.5*foc/A[2],false)}})}})}
+/* ---------- physics ---------- */
+const curNow=()=>st.sI*(st.comm?(Math.cos(th)>=0?1:-1):1);
+const SWING=Math.PI/4;
+function swing(h){/* commutator OFF only: pendulum-like swing, amplitude held at +-SWING, no damping */
+const k=34,s=st.sI*st.sB,e=s*Math.PI/2;
+om+=k*s*Math.cos(th)*h;th+=om*h;
+const x=Math.atan2(Math.sin(th-e),Math.cos(th-e));
+if(Math.abs(x)<=SWING){const K=k*(1-Math.cos(SWING))-k*(1-Math.cos(x));
+const sg=Math.sign(om)||-Math.sign(x)||1;om=sg*Math.sqrt(Math.max(0,2*K))}
+ph+=st.sI*2.2*h}
+function phys(h){if(!st.comm){swing(h);return}
+const k=34,c=3.5,cur=curNow();let a=k*cur*st.sB*Math.cos(th);if(st.comm)a-=c*om;
+om+=a*h;th+=om*h;ph+=cur*2.2*h;if(Math.abs(th)>50)th%=2*Math.PI}
+/* ---------- scene ---------- */
+const w=1.4,Lh=1.6,mx=2.6,zr=-2.7;
+const rot=(x,y,z)=>[x*Math.cos(th)-y*Math.sin(th),x*Math.sin(th)+y*Math.cos(th),z];
+function build(){
+const sB=st.sB,cur=curNow();
+box(-4.3,-mx,-1.9,1.9,-2.3,2.3,sB>0?'N':'S');box(mx,4.3,-1.9,1.9,-2.3,2.3,sB>0?'S':'N');
+[[0,0],[1.05,1.3],[-1.05,1.3],[1.05,-1.3],[-1.05,-1.3]].forEach((q,i)=>arrow([-2.5*sB,q[0],q[1]],[2.5*sB,q[0],q[1]],T.field,3,i==0?'B':'',.25));
+const A=z=>rot(w,0,z),B=z=>rot(-w,0,z),M=[0,0,Lh];
+let white,black;
+if(st.comm){const Rr=.55,z0=-2.95,z1=-2.45;
+white=[rot(Rr,0,z1),rot(w,0,z1),A(-Lh),A(Lh),M];black=[M,B(Lh),B(-Lh),rot(-w,0,z1),rot(-Rr,0,z1)];
+if(st.show){
+[[0,'#fff','#111'],[Math.PI,'#000','#ececec']].forEach(([o,col,ol])=>{const a0=th+o-Math.PI/2+.1,a1=th+o+Math.PI/2-.1,N=10;
+for(let i=0;i<N;i++){const p=a0+(a1-a0)*i/N,q=a0+(a1-a0)*(i+1)/N;
+poly([[Rr*Math.cos(p),Rr*Math.sin(p),z0],[Rr*Math.cos(q),Rr*Math.sin(q),z0],[Rr*Math.cos(q),Rr*Math.sin(q),z1],[Rr*Math.cos(p),Rr*Math.sin(p),z1]],col,ol)}});
+const bx=Rr+.9;[1,-1].forEach(k=>{seg([k*bx,0,zr],[k*(Rr+.03),0,zr],'#c0c7d2',14,'#111');
+seg([k*bx,0,zr],[k*bx,-2.9,zr],T.wire,3,T.ol);seg([k*bx,-2.9,zr],[k*.18,-2.9,zr],T.wire,3,T.ol)});
+const pp=st.sI>0?.18:-.18;seg([pp,-3.35,zr],[pp,-2.45,zr],T.wire,6,T.ol);seg([-pp,-3.15,zr],[-pp,-2.65,zr],T.wire,6,T.ol);
+text3([pp*2.5,-3.75,zr],'+',T.cur,22);text3([-pp*2.5,-3.75,zr],'−',T.cur,22);text3([0,-4.35,zr],'Cell',T.tx,14)}
+}else{const zc=-3.3,p=.2,pp=st.sI>0?p:-p;
+white=[rot(p,0,zc),rot(p,0,zc+.6),rot(w,0,-2.3),A(-Lh),A(Lh),M];black=[M,B(Lh),B(-Lh),rot(-w,0,-2.3),rot(-p,0,zc+.6),rot(-p,0,zc)];
+[[pp,.45],[-pp,.25]].forEach(([x,h])=>seg(rot(x,-h,zc),rot(x,h,zc),T.wire,6,T.ol));
+text3(rot(pp*3.2,-.95,zc),'+',T.cur,22);text3(rot(-pp*3.2,-.95,zc),'−',T.cur,22);text3(rot(0,-1.6,zc),'Cell',T.tx,14)}
+for(let i=0;i<white.length-1;i++)seg(white[i],white[i+1],'#fff',9,'#111');
+for(let i=0;i<black.length-1;i++)seg(black[i],black[i+1],'#000',9,'#ececec');
+/* current chevrons */
+const Q=white.concat(black.slice(1)),len=[];for(let i=0;i<Q.length-1;i++)len.push(Math.hypot(...V.sub(Q[i+1],Q[i])));
+const per=len.reduce((a,b)=>a+b,0),n=Math.round(per/1.4);
+for(let i=0;i<n;i++){let d=(((ph+i*per/n)%per)+per)%per,j=0;while(j<len.length-1&&d>len[j]){d-=len[j];j++}
+const dir=V.norm(V.sub(Q[j+1],Q[j]));chevron(V.add(Q[j],V.mul(dir,d)),V.mul(dir,cur>0?1:-1),T.cur)}
+text3(V.add(A(Lh*.55),[0,0,0]),'I',T.cur,19);
+/* forces */
+const FA=V.cross([0,0,cur],[sB,0,0]);
+arrow(V.add(A(0),V.mul(FA,.15)),V.add(A(0),V.mul(FA,1.7)),T.force,7,'F');
+arrow(V.add(B(0),V.mul(FA,-.15)),V.add(B(0),V.mul(FA,-1.7)),T.force,7,'F')}
+/* ---------- UI ---------- */
+let lastTxt='';
+function live(){const cur=curNow(),FA=V.cross([0,0,cur],[st.sB,0,0]),tq=cur*st.sB>0?'anticlockwise':'clockwise';
+const t=`<b>White wire now:</b> field ${st.sB>0?'left→right':'right→left'}, current ${cur>0?'towards you (axle view)':'away from you (axle view)'}, force ${FA[1]>0?'UP':'DOWN'}. The black wire has opposite current, so its force is opposite.<br>`+
+(st.comm?`<b>With commutator:</b> the split ring swaps the current when the coil is vertical, so the forces always turn the coil the same way (${tq}, axle view) – it keeps spinning.`
+:`<b>No commutator:</b> the cell is wired to the coil and turns with it, and the current never reverses. The forces always pull the coil back towards the vertical, so it swings to and fro instead of turning round (friction is ignored, so it never settles).`);
+if(t!==lastTxt){$('#live').innerHTML=t;lastTxt=t}}
+function labels(){$('#bComm').textContent='Commutator: '+(st.comm?'ON':'OFF');$('#bComm').setAttribute('aria-pressed',st.comm);
+$('#bShow').textContent=st.show?'Commutator parts: shown':'Commutator parts: hidden';$('#bShow').setAttribute('aria-pressed',st.show);$('#bShow').disabled=!st.comm;
+$('#bPause').setAttribute('aria-pressed',st.paused);$('#bSlow').setAttribute('aria-pressed',st.slow)}
+document.querySelectorAll('[data-v]').forEach(b=>b.onclick=()=>goal={...VIEWS[b.dataset.v]});
+$('#bComm').onclick=()=>{st.comm=!st.comm;th=st.comm?0:st.sI*st.sB*Math.PI/2-SWING;om=0;labels()};
+$('#bShow').onclick=()=>{st.show=!st.show;labels()};
+$('#bRev').onclick=()=>{st.sI*=-1};$('#bPol').onclick=()=>{st.sB*=-1};
+$('#bPause').onclick=()=>{st.paused=!st.paused;labels()};$('#bSlow').onclick=()=>{st.slow=!st.slow;labels()};
+labels();
+/* ---------- loop ---------- */
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,(now-last)/1000);last=now;
+if(!st.paused){const sd=dt*(st.slow?.3:1);for(let i=0;i<8;i++)phys(sd/8);tt+=sd}
+if(goal){const wrap=a=>Math.atan2(Math.sin(a),Math.cos(a));cam.yaw+=wrap(goal.yaw-cam.yaw)*.13;cam.pitch+=(goal.pitch-cam.pitch)*.13;cam.dist+=(goal.dist-cam.dist)*.13;
+if(Math.abs(wrap(goal.yaw-cam.yaw))+Math.abs(goal.pitch-cam.pitch)<.003)goal=null}
+setCam();items=[];build();items.sort((a,b)=>b.z-a.z);
+g.setTransform(dpr,0,0,dpr,0,0);g.fillStyle=T.bg;g.fillRect(0,0,W,H);items.forEach(i=>i.d());live();
+requestAnimationFrame(frame)}
+requestAnimationFrame(frame);
+</script></body></html>
