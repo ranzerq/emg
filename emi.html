@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Electromagnetic Induction – IGCSE Physics</title>
+<style>
+:root{--bg:#0e1420;--pn:#1a2335;--tx:#f4f7fb;--bd:#5a6a86;--on:#ffc400}
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:var(--bg);color:var(--tx);font-family:system-ui,sans-serif;overflow:hidden}
+canvas{position:fixed;inset:0;width:100%;height:100%;touch-action:none}
+#ui{position:fixed;left:0;right:0;bottom:0;padding:8px 8px calc(8px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;align-items:center;gap:8px;background:linear-gradient(transparent,var(--bg) 14%)}
+.row{display:flex;flex-wrap:wrap;gap:8px 10px;justify-content:center;align-items:center;width:min(880px,100%)}
+button{font:600 14px system-ui,sans-serif;color:var(--tx);background:var(--pn);border:2px solid var(--bd);border-radius:999px;padding:8px 14px;min-height:40px;cursor:pointer}
+button[aria-pressed=true]{background:var(--on);color:#111;border-color:var(--on)}
+input[type=range]{flex:1 1 240px;min-width:160px;accent-color:#ffc400;height:32px}
+</style></head><body>
+<canvas id="c"></canvas>
+<div id="ui"><div class="row"><button id="bMag" aria-pressed="true">Move the magnet</button><button id="bCoil" aria-pressed="false">Move the coil</button>
+<button id="bAuto" aria-pressed="false">Auto push-pull</button><button id="bFlip" aria-pressed="false">Flip magnet</button></div>
+<div class="row"><span>◀</span><input id="sl" type="range" min="-5.2" max="5.2" step="0.01" value="-4" aria-label="Position of the moving part"><span>▶</span></div></div>
+<script>
+const $=s=>document.querySelector(s),cv=$('#c'),g=cv.getContext('2d');
+const T={bg:'#0e1420',field:'#00e5ff',cur:'#ffee58',coil:'#d9843c',cut:'#ff4081',N:'#e53935',S:'#2f5bff'};
+const R=.95,NT=7,PIT=.27,LH=NT*PIT,HM=1.6,TH=.38,PH=1.3,AY=-.4,TT=.5;
+const Ca=Math.cos(AY),Sa=Math.sin(AY),Ct=Math.cos(TT),St=Math.sin(TT),Vv=[-Ct*Sa,St,Ct*Ca];
+let W,H,dpr,S,OX,OY,dw,hh,Cx,Cy,TL,TR,lastUH=0;
+const st={mode:'mag',s:-4,auto:false,flip:false};
+let emfS=0,ndl=0,ph=0,phiPrev=0,first=true,at=0,xmN=0,xcN=0;
+function layout(){dpr=devicePixelRatio||1;W=innerWidth;H=innerHeight;cv.width=W*dpr;cv.height=H*dpr;g.setTransform(dpr,0,0,dpr,0,0);
+const ah=H-$('#ui').offsetHeight;S=Math.min(W/14,ah/11);OX=W/2;OY=ah*.63;
+dw=Math.max(48,Math.min(Math.max(S*1.5,70),(OY-S*3.4-8)/1.6));hh=dw*.8;Cx=OX;Cy=OY-S*3.4-hh;
+TL=[Cx-dw*.55,Cy+hh+10];TR=[Cx+dw*.55,Cy+hh+10];lastUH=$('#ui').offsetHeight}
+addEventListener('resize',layout);
+const P=(x,y,z)=>{const xr=x*Ca+z*Sa,zr=-x*Sa+z*Ca;return[OX+xr*S,OY-(y*Ct-zr*St)*S,zr*Ct+y*St]};
+const V3={dot:(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2]};
+/* field lines of a bar magnet (two-pole model), traced once */
+const LINES=[];(function(){const fld=(x,r)=>{let bx=0,br=0;[[PH,1],[-PH,-1]].forEach(([px,q])=>{const dx=x-px,d2=dx*dx+r*r,k=q/(d2*Math.sqrt(d2));bx+=k*dx;br+=k*r});return[bx,br]};
+[1.5,1.7,1.9,2.1].forEach(a=>{let x=PH+.55*Math.cos(a),r=.55*Math.sin(a),ok=false;const p=[[x,r]];
+for(let i=0;i<300;i++){const[b1,b2]=fld(x,r),n=Math.hypot(b1,b2);x+=b1/n*.1;r=Math.max(.03,r+b2/n*.1);p.push([x,r]);if(Math.hypot(x+PH,r)<.45){ok=true;break}if(Math.abs(x)>8||r>4)break}
+if(ok)LINES.push(p)})})();
+/* drawing helpers */
+let items=[];
+const Ln=(A,B)=>{g.beginPath();g.moveTo(A[0],A[1]);g.lineTo(B[0],B[1]);g.stroke()};
+function seg(a,b,col,w,ol){const A=P(...a),B=P(...b);items.push({k:(A[2]+B[2])/2,d(){g.lineCap='round';if(ol){g.strokeStyle=ol;g.lineWidth=w+3;Ln(A,B)}g.strokeStyle=col;g.lineWidth=w;Ln(A,B)}})}
+function pline(pts,col,w,al){const Q=pts.map(p=>P(...p));items.push({k:Q.reduce((s,q)=>s+q[2],0)/Q.length,d(){g.globalAlpha=al;g.lineCap='round';g.lineJoin='round';g.strokeStyle=col;g.lineWidth=w;g.beginPath();Q.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.stroke();g.globalAlpha=1}})}
+function poly(pts,fill,al=1){const Q=pts.map(p=>P(...p));items.push({k:Q.reduce((s,q)=>s+q[2],0)/Q.length,d(){g.globalAlpha=al;g.beginPath();Q.forEach((q,i)=>i?g.lineTo(q[0],q[1]):g.moveTo(q[0],q[1]));g.closePath();g.fillStyle=fill;g.fill();g.globalAlpha=1;if(al==1){g.strokeStyle='#000';g.lineWidth=1.5;g.stroke()}}})}
+function head(x,y,ang,sz,col){const c=Math.cos(ang),s=Math.sin(ang);g.beginPath();g.moveTo(x+c*sz,y+s*sz);g.lineTo(x-c*sz*.7+s*sz*.8,y-s*sz*.7-c*sz*.8);g.lineTo(x-c*sz*.7-s*sz*.8,y-s*sz*.7+c*sz*.8);g.closePath();g.lineJoin='round';g.strokeStyle='#111';g.lineWidth=2.5;g.stroke();g.fillStyle=col;g.fill()}
+function text(x,y,s,col,size,halo=true){g.font=`bold ${size}px system-ui,sans-serif`;g.textAlign='center';g.textBaseline='middle';if(halo){g.lineWidth=4;g.lineJoin='round';g.strokeStyle=T.bg;g.strokeText(s,x,y)}g.fillStyle=col;g.fillText(s,x,y)}
+function box(x0,x1,col,ch){const c=[];for(let i=0;i<8;i++)c.push([i&1?x1:x0,i&2?TH:-TH,i&4?TH:-TH]);
+[[0,2,6,4,[-1,0,0],.7],[1,3,7,5,[1,0,0],.7],[0,1,5,4,[0,-1,0],.5],[2,3,7,6,[0,1,0],1],[0,1,3,2,[0,0,-1],.65],[4,5,7,6,[0,0,1],.85]].forEach(f=>{
+if(V3.dot(f[4],Vv)<=0)return;const pts=[c[f[0]],c[f[1]],c[f[2]],c[f[3]]];poly(pts,col);poly(pts,'#000',1-f[5]);
+if(f[4][1]==1){const q=P((x0+x1)/2,TH,0);items.push({k:q[2]+.4,d(){text(q[0],q[1],ch,'#fff',S*.8,false)}})}})}
+function bez(a,b){const k=Math.max(S*.9,Math.abs(a[1]-b[1])*.45),p1=[a[0],a[1]-k],p2=[b[0],b[1]+k],o=[];
+for(let i=0;i<=28;i++){const t=i/28,u=1-t;o.push([u*u*u*a[0]+3*u*u*t*p1[0]+3*u*t*t*p2[0]+t*t*t*b[0],u*u*u*a[1]+3*u*u*t*p1[1]+3*u*t*t*p2[1]+t*t*t*b[1]])}return o}
+const plen=a=>{let s=0;for(let i=1;i<a.length;i++)s+=Math.hypot(a[i][0]-a[i-1][0],a[i][1]-a[i-1][1]);return s};
+function along(a,dist){for(let i=1;i<a.length;i++){const l=Math.hypot(a[i][0]-a[i-1][0],a[i][1]-a[i-1][1]);if(dist<=l||i==a.length-1){const t=Math.min(1,dist/(l||1));
+return[a[i-1][0]+(a[i][0]-a[i-1][0])*t,a[i-1][1]+(a[i][1]-a[i-1][1])*t,Math.atan2(a[i][1]-a[i-1][1],a[i][0]-a[i-1][0])]}dist-=l}}
+/* scene */
+let top2=[];
+function build(xm,xc,sg,I){
+box(xm-HM,xm,sg>0?T.S:T.N,sg>0?'S':'N');box(xm,xm+HM,sg>0?T.N:T.S,sg>0?'N':'S');
+const a=Math.abs(I),cuts=[];
+LINES.forEach(L=>{for(let j=0;j<6;j++){const c=Math.cos(j*Math.PI/3),s=Math.sin(j*Math.PI/3);let ch=[];
+const flush=()=>{if(ch.length>1)pline(ch,T.field,1.7,.55);ch=[]};
+for(let i=0;i<L.length;i++){const[lx,r]=L[i];
+if(i&&(L[i-1][1]-R)*(r-R)<0){const t=(R-L[i-1][1])/(r-L[i-1][1]),X=xm+sg*(L[i-1][0]+t*(lx-L[i-1][0]));if(Math.abs(X-xc)<LH/2+.05)cuts.push([X,R*c,R*s])}
+if(Math.abs(lx)<HM+.02&&r<TH+.02){flush();continue}
+ch.push([xm+sg*lx,r*c,r*s]);if(ch.length>=14){const l=ch[ch.length-1];flush();ch=[l]}}flush()}});
+if(a>.05)cuts.forEach(p=>{const q=P(...p);items.push({k:q[2]+.3,d(){g.beginPath();g.arc(q[0],q[1],3.5+3*a,0,7);g.fillStyle=T.cut;g.fill();g.strokeStyle='#fff';g.lineWidth=1.5;g.stroke()}})});
+/* coil: one continuous helix, both ends at the top */
+const H3=[],n=NT*20;for(let k=0;k<=n;k++){const p=2*Math.PI*k/20;H3.push([xc-LH/2+PIT*k/20,R*Math.cos(p),R*Math.sin(p)])}
+for(let k=0;k<n;k++)seg(H3[k],H3[k+1],T.coil,4.5,'#140a04');
+const t0=P(...H3[0]),t1=P(...H3[n]),wL=bez(t0,TL),wR=bez(t1,TR);
+/* current chevrons along coil, right wire, (through meter), left wire */
+const hl=[0];for(let k=1;k<=n;k++)hl.push(hl[k-1]+Math.hypot(H3[k][0]-H3[k-1][0],H3[k][1]-H3[k-1][1],H3[k][2]-H3[k-1][2]));
+const lH=hl[n],lR=plen(wR)/S,lL=plen(wL)/S,gap=1.2,tot=lH+lR+gap+lL;top2=[];
+if(a>.05){const N=Math.round(tot/1.7),sz=6+6*a,fl=I>0?0:Math.PI;
+for(let i=0;i<N;i++){const u=(((ph+i*tot/N)%tot)+tot)%tot;
+if(u<lH){let k=1;while(k<n&&hl[k]<u)k++;const A=P(...H3[k-1]),B=P(...H3[k]),ang=Math.atan2(B[1]-A[1],B[0]-A[0])+fl,q=(u-hl[k-1])/(hl[k]-hl[k-1]);
+const x=A[0]+(B[0]-A[0])*q,y=A[1]+(B[1]-A[1])*q;items.push({k:(A[2]+B[2])/2+.2,d(){head(x,y,ang,sz,T.cur)}})}
+else if(u<lH+lR){const p=along(wR,(u-lH)*S);top2.push([p[0],p[1],p[2]+fl,sz])}
+else if(u>=lH+lR+gap){const p=along(wL.slice().reverse(),(u-lH-lR-gap)*S);top2.push([p[0],p[1],p[2]+fl,sz])}}}
+top2.wL=wL;top2.wR=wR}
+/* top layer: flexible leads, chevrons, galvanometer */
+function drawTop(){
+[top2.wL,top2.wR].forEach(w=>{g.lineCap='round';g.lineJoin='round';g.beginPath();w.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1]));g.strokeStyle='#140a04';g.lineWidth=7.5;g.stroke();g.strokeStyle=T.coil;g.lineWidth=4.5;g.stroke()});
+top2.forEach(c=>head(c[0],c[1],c[2],c[3],T.cur));
+const x=Cx-dw,y=Cy-hh;g.beginPath();g.roundRect(x,y,2*dw,2*hh,14);g.fillStyle='#eef1f6';g.fill();g.strokeStyle='#8c9ab4';g.lineWidth=4;g.stroke();
+const px=Cx,py=Cy+hh*.62,Ra=hh;g.strokeStyle='#1b2333';g.lineWidth=2;g.beginPath();g.arc(px,py,Ra,-Math.PI/2-.96,-Math.PI/2+.96);g.stroke();
+for(let i=-5;i<=5;i++){const a=i*.192,r1=i==0?.74:.86;g.lineWidth=i==0?3:2;Ln([px+Math.sin(a)*Ra*r1,py-Math.cos(a)*Ra*r1],[px+Math.sin(a)*Ra,py-Math.cos(a)*Ra])}
+text(px,py-Ra*.62,'0','#1b2333',Math.max(14,hh*.25),false);text(Cx,y+13,'Galvanometer','#1b2333',Math.max(11,hh*.18),false);
+const na=ndl*.96;g.lineCap='round';g.strokeStyle='#d50000';g.lineWidth=4;Ln([px,py],[px+Math.sin(na)*Ra*.95,py-Math.cos(na)*Ra*.95]);g.beginPath();g.arc(px,py,6,0,7);g.fillStyle='#333';g.fill();
+[TL,TR].forEach(t=>{g.beginPath();g.arc(t[0],t[1]-4,7,0,7);g.fillStyle='#b8c0cf';g.fill();g.strokeStyle='#111';g.lineWidth=2;g.stroke()});
+const m=P(st.mode=='mag'?xmN:xcN,0,0);text(m[0],m[1]+S*1.9,'◀ drag ▶','#ffc400',Math.max(13,S*.34))}
+/* input */
+let drag=false,lx=0;const hit=(x,y)=>{const m=P(st.mode=='mag'?xmN:xcN,0,0);return Math.abs(x-m[0])<2.6*S&&Math.abs(y-m[1])<2*S};
+const setS=v=>{st.s=Math.max(-5.2,Math.min(5.2,v));$('#sl').value=st.s};
+cv.addEventListener('pointerdown',e=>{if(hit(e.clientX,e.clientY)){drag=true;lx=e.clientX;cv.setPointerCapture(e.pointerId);st.auto=false;ui()}});
+cv.addEventListener('pointermove',e=>{if(drag){setS(st.s+(e.clientX-lx)/(S*Ca));lx=e.clientX}cv.style.cursor=drag?'grabbing':hit(e.clientX,e.clientY)?'grab':'default'});
+['pointerup','pointercancel'].forEach(n=>cv.addEventListener(n,()=>drag=false));
+$('#sl').oninput=e=>{st.s=+e.target.value;st.auto=false;ui()};
+function mode(m){st.mode=m;setS(m=='mag'?-4:4);st.auto=false;first=true;emfS=ndl=0;ui()}
+$('#bMag').onclick=()=>mode('mag');$('#bCoil').onclick=()=>mode('coil');
+$('#bAuto').onclick=()=>{st.auto=!st.auto;at=Math.asin(Math.max(-1,Math.min(1,st.s/5)))/.8;ui()};
+$('#bFlip').onclick=()=>{st.flip=!st.flip;first=true;emfS=0;ui()};
+function ui(){$('#bMag').setAttribute('aria-pressed',st.mode=='mag');$('#bCoil').setAttribute('aria-pressed',st.mode=='coil');$('#bAuto').setAttribute('aria-pressed',st.auto);$('#bFlip').setAttribute('aria-pressed',st.flip)}
+/* loop */
+let last=performance.now();
+function frame(now){const dt=Math.min(.05,Math.max(.002,(now-last)/1000));last=now;
+if(st.auto){at+=dt;setS(5*Math.sin(at*.8))}
+const xm=st.mode=='mag'?st.s:0,xc=st.mode=='mag'?0:st.s,d=xm-xc,sg=st.flip?-1:1;xmN=xm;xcN=xc;
+const f=p=>.5*p/Math.sqrt(p*p+R*R),p0=f(d+PH)-f(d-PH);if(first){phiPrev=p0;first=false}
+const dphi=(p0-phiPrev)/dt;phiPrev=p0;const al=1-Math.exp(-dt/.05);
+emfS+=(-sg*dphi-emfS)*al;
+const I=Math.tanh(emfS/1.1);ndl+=(I-ndl)*(1-Math.exp(-dt/.07));ph+=I*3.4*dt;
+items=[];build(xm,xc,sg,I);items.sort((a,b)=>a.k-b.k);
+g.setTransform(dpr,0,0,dpr,0,0);g.fillStyle=T.bg;g.fillRect(0,0,W,H);items.forEach(i=>i.d());drawTop();
+requestAnimationFrame(frame)}
+layout();ui();requestAnimationFrame(frame);
+</script></body></html>
